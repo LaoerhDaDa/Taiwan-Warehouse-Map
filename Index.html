@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TW Warehouse Intelligence Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root {
+  --bg:#0a0e14; --panel:#111620; --border:#1e2a3a;
+  --accent:#00d4ff; --accent2:#ff6b35; --accent3:#39ff14;
+  --text:#c8d8e8; --muted:#4a6070; --cold:#7b61ff;
+}
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+body { font-family:'Noto Sans TC',sans-serif; background:var(--bg); color:var(--text); height:100vh; height:100dvh; display:flex; flex-direction:column; overflow:hidden; }
+header { background:var(--panel); border-bottom:1px solid var(--border); padding:10px 14px; display:flex; align-items:center; gap:12px; flex-shrink:0; z-index:100; }
+.logo { font-family:'IBM Plex Mono',monospace; font-size:12px; font-weight:600; color:var(--accent); letter-spacing:2px; text-transform:uppercase; white-space:nowrap; }
+.logo span { color:var(--muted); }
+.stats { display:flex; gap:14px; margin-left:auto; font-family:'IBM Plex Mono',monospace; }
+.stat { display:flex; flex-direction:column; align-items:flex-end; }
+.stat-val { color:var(--accent); font-weight:600; font-size:15px; line-height:1; }
+.stat-lbl { color:var(--muted); font-size:9px; }
+.loading-bar {
+  position:fixed; top:0; left:0; right:0; height:2px; z-index:9999;
+  background:linear-gradient(90deg, var(--accent), var(--cold), var(--accent3));
+  background-size:200% 100%;
+  animation:loading 1.2s linear infinite;
+}
+@keyframes loading { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+/* DESKTOP */
+.main { display:flex; flex:1; overflow:hidden; }
+.sidebar { width:260px; background:var(--panel); border-right:1px solid var(--border); display:flex; flex-direction:column; flex-shrink:0; overflow:hidden; }
+.filter-section { padding:12px; border-bottom:1px solid var(--border); }
+.filter-label { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:8px; }
+.search-box { width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:7px 10px; font-size:12px; font-family:'Noto Sans TC',sans-serif; outline:none; border-radius:2px; }
+.search-box:focus { border-color:var(--accent); }
+.type-filters { display:flex; flex-direction:column; gap:6px; }
+.filter-btn { display:flex; align-items:center; gap:8px; padding:6px 10px; background:transparent; border:1px solid var(--border); color:var(--text); font-size:12px; font-family:'Noto Sans TC',sans-serif; cursor:pointer; border-radius:2px; transition:all .15s; text-align:left; }
+.filter-btn.active { border-color:var(--accent); background:rgba(0,212,255,.05); }
+.filter-btn:hover { border-color:var(--accent); }
+.dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.cnt { margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); background:var(--bg); padding:1px 6px; border-radius:2px; }
+.list-area { flex:1; overflow-y:auto; padding:8px; }
+.list-area::-webkit-scrollbar { width:4px; }
+.list-area::-webkit-scrollbar-thumb { background:var(--border); }
+.warehouse-item { padding:8px 10px; border:1px solid transparent; border-radius:2px; cursor:pointer; margin-bottom:2px; transition:all .1s; }
+.warehouse-item:hover { border-color:var(--border); background:rgba(255,255,255,.02); }
+.warehouse-item.selected { border-color:var(--accent); background:rgba(0,212,255,.05); }
+.item-name { font-size:12px; color:var(--text); line-height:1.4; }
+.item-meta { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); margin-top:2px; }
+#map { flex:1; }
+.info-panel { width:300px; background:var(--panel); border-left:1px solid var(--border); flex-shrink:0; overflow-y:auto; display:none; }
+.info-panel.visible { display:block; }
+.info-panel::-webkit-scrollbar { width:4px; }
+.info-panel::-webkit-scrollbar-thumb { background:var(--border); }
+.info-hdr { padding:14px 16px 10px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--panel); z-index:1; }
+.close-btn { float:right; background:transparent; border:none; color:var(--muted); cursor:pointer; font-size:16px; }
+.close-btn:hover { color:var(--text); }
+
+/* MOBILE */
+.bottom-bar { position:fixed; bottom:0; left:0; right:0; z-index:500; background:var(--panel); border-top:1px solid var(--border); display:none; }
+.search-row { display:flex; gap:8px; padding:10px 12px; align-items:center; }
+.search-box-m { flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text); padding:9px 12px; font-size:14px; font-family:'Noto Sans TC',sans-serif; outline:none; border-radius:4px; }
+.search-box-m:focus { border-color:var(--accent); }
+.filter-btn-m { background:var(--bg); border:1px solid var(--border); color:var(--muted); padding:9px 12px; font-size:12px; font-family:'IBM Plex Mono',monospace; border-radius:4px; cursor:pointer; white-space:nowrap; }
+.filter-btn-m.active { border-color:var(--accent); color:var(--accent); }
+.list-btn { background:var(--accent); border:none; color:var(--bg); padding:9px 14px; font-size:12px; font-weight:700; font-family:'IBM Plex Mono',monospace; border-radius:4px; cursor:pointer; white-space:nowrap; }
+.chips { display:none; gap:8px; padding:0 12px 10px; overflow-x:auto; scrollbar-width:none; }
+.chips::-webkit-scrollbar { display:none; }
+.chips.open { display:flex; }
+.chip { display:flex; align-items:center; gap:6px; padding:6px 12px; border:1px solid var(--border); background:transparent; color:var(--text); font-size:12px; font-family:'Noto Sans TC',sans-serif; border-radius:20px; cursor:pointer; white-space:nowrap; }
+.chip.active { border-color:var(--accent); background:rgba(0,212,255,.08); color:var(--accent); }
+.chip-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:550; display:none; }
+.overlay.on { display:block; }
+.sheet { position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-radius:16px 16px 0 0; transform:translateY(100%); transition:transform .35s cubic-bezier(.4,0,.2,1); display:flex; flex-direction:column; }
+.sheet.open { transform:translateY(0); }
+.list-sheet { z-index:600; border-top:2px solid var(--border); max-height:75vh; }
+.info-sheet { z-index:700; border-top:2px solid var(--accent); max-height:85vh; }
+.handle { width:40px; height:4px; background:var(--border); border-radius:2px; margin:10px auto 0; flex-shrink:0; }
+.sheet-hdr { display:flex; justify-content:space-between; align-items:center; padding:10px 16px 8px; flex-shrink:0; border-bottom:1px solid var(--border); }
+.sheet-ttl { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+.xbtn { background:transparent; border:none; color:var(--muted); font-size:18px; cursor:pointer; padding:2px 6px; }
+.list-area-m { flex:1; overflow-y:auto; padding:6px 8px; -webkit-overflow-scrolling:touch; }
+.info-hdr-m { padding:14px 16px 10px; border-bottom:1px solid var(--border); flex-shrink:0; position:relative; }
+.info-body-wrap { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+
+/* SHARED INFO */
+.info-title { font-size:13px; font-weight:700; color:var(--text); margin-bottom:4px; line-height:1.4; padding-right:28px; }
+.info-type { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--accent); letter-spacing:1px; text-transform:uppercase; }
+.sec { padding:10px 16px; border-bottom:1px solid var(--border); }
+.sec-t { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:8px; }
+.row { display:flex; justify-content:space-between; align-items:flex-start; padding:5px 0; border-bottom:1px solid rgba(30,42,58,.5); font-size:12px; gap:8px; }
+.row:last-child { border-bottom:none; }
+.rk { color:var(--muted); white-space:nowrap; flex-shrink:0; }
+.rv { color:var(--text); text-align:right; word-break:break-word; }
+.env-tag { display:inline-block; font-size:10px; padding:2px 6px; border-radius:10px; margin:2px 2px 0 0; font-family:'IBM Plex Mono',monospace; }
+.eg { background:rgba(0,212,255,.1); color:var(--accent); border:1px solid rgba(0,212,255,.3); }
+.ec { background:rgba(123,97,255,.1); color:#7b61ff; border:1px solid rgba(123,97,255,.3); }
+.ea { background:rgba(57,255,20,.1); color:var(--accent3); border:1px solid rgba(57,255,20,.3); }
+.ep { background:rgba(255,107,53,.1); color:var(--accent2); border:1px solid rgba(255,107,53,.3); }
+.note { background:rgba(0,0,0,.2); border:1px solid var(--border); border-radius:4px; padding:8px; font-size:11px; color:var(--muted); line-height:1.6; margin-top:4px; }
+a.lnk { color:var(--accent); }
+
+/* FLOOR */
+.floor-item { padding:8px 10px; border:1px solid var(--border); border-radius:2px; margin-bottom:6px; cursor:pointer; transition:all .1s; }
+.floor-item:hover { border-color:var(--accent); background:rgba(0,212,255,.03); }
+.floor-item.open { border-color:var(--accent); background:rgba(0,212,255,.05); }
+.floor-header { display:flex; justify-content:space-between; align-items:center; }
+.floor-name { font-size:12px; font-weight:700; color:var(--text); }
+.floor-badge { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--muted); }
+.floor-detail { display:none; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); }
+.floor-item.open .floor-detail { display:block; }
+.floor-row { display:flex; justify-content:space-between; font-size:11px; padding:3px 0; border-bottom:1px solid rgba(30,42,58,.4); }
+.floor-row:last-child { border-bottom:none; }
+.fk { color:var(--muted); }
+.fv { color:var(--text); text-align:right; }
+.equip-section { margin-top:8px; }
+.equip-title { font-family:'IBM Plex Mono',monospace; font-size:9px; color:var(--accent); letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
+.equip-item { font-size:11px; color:var(--muted); padding:2px 0; }
+.loading-text { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); text-align:center; padding:16px; }
+
+/* LEAFLET */
+.leaflet-container { background:#0a0e14; }
+.leaflet-popup-content-wrapper { background:var(--panel); border:1px solid var(--border); border-radius:4px; color:var(--text); box-shadow:0 4px 20px rgba(0,0,0,.5); }
+.leaflet-popup-tip { background:var(--panel); }
+.leaflet-popup-content { font-family:'Noto Sans TC',sans-serif; font-size:12px; margin:8px 10px; }
+.pn { font-weight:700; margin-bottom:3px; font-size:13px; }
+.pm { color:var(--muted); font-size:11px; font-family:'IBM Plex Mono',monospace; }
+.leaflet-control-zoom a { background:var(--panel)!important; color:var(--text)!important; border-color:var(--border)!important; }
+</style>
+</head>
+<body>
+<div class="loading-bar" id="loadingBar"></div>
+<header>
+  <div class="logo">TW <span>//</span> WAREHOUSE INTEL</div>
+  <div class="stats">
+    <div class="stat"><div class="stat-val" id="sShown">–</div><div class="stat-lbl">SHOWN</div></div>
+    <div class="stat"><div class="stat-val" id="sSqm">–</div><div class="stat-lbl">SQM</div></div>
+  </div>
+</header>
+
+<!-- DESKTOP -->
+<div class="main" id="dLayout">
+  <div class="sidebar">
+    <div class="filter-section">
+      <div class="filter-label">Search</div>
+      <input class="search-box" id="sdSearch" placeholder="倉庫名、房東、License...">
+    </div>
+    <div class="filter-section">
+      <div class="filter-label">Type</div>
+      <div class="type-filters">
+        <button class="filter-btn active" data-t="all"><span class="dot" style="background:var(--text)"></span>全部<span class="cnt" id="ca">–</span></button>
+        <button class="filter-btn" data-t="Warehouse"><span class="dot" style="background:var(--accent)"></span>倉庫<span class="cnt" id="cw">–</span></button>
+        <button class="filter-btn" data-t="cold"><span class="dot" style="background:var(--cold)"></span>冷鏈<span class="cnt" id="cc">–</span></button>
+        <button class="filter-btn" data-t="End Customer"><span class="dot" style="background:var(--accent2)"></span>End Customer<span class="cnt" id="ce">–</span></button>
+        <button class="filter-btn" data-t="Logistics Node"><span class="dot" style="background:var(--accent3)"></span>Logistics Node<span class="cnt" id="cn">–</span></button>
+      </div>
+    </div>
+    <div class="list-area" id="dList"></div>
+  </div>
+  <div id="map"></div>
+  <div class="info-panel" id="dInfo">
+    <div class="info-hdr">
+      <button class="close-btn" id="dClose">✕</button>
+      <div class="info-title" id="dName"></div>
+      <div class="info-type" id="dType"></div>
+    </div>
+    <div id="dBody"></div>
+  </div>
+</div>
+
+<!-- MOBILE -->
+<div class="bottom-bar" id="mBar">
+  <div class="search-row">
+    <input class="search-box-m" id="mSearch" placeholder="搜尋倉庫、房東...">
+    <button class="filter-btn-m" id="mFilter">篩選</button>
+    <button class="list-btn" id="mList">清單</button>
+  </div>
+  <div class="chips" id="mChips">
+    <button class="chip active" data-t="all"><span class="chip-dot" style="background:var(--text)"></span>全部</button>
+    <button class="chip" data-t="Warehouse"><span class="chip-dot" style="background:var(--accent)"></span>倉庫</button>
+    <button class="chip" data-t="cold"><span class="chip-dot" style="background:var(--cold)"></span>冷鏈</button>
+    <button class="chip" data-t="End Customer"><span class="chip-dot" style="background:var(--accent2)"></span>End Customer</button>
+    <button class="chip" data-t="Logistics Node"><span class="chip-dot" style="background:var(--accent3)"></span>Logistics Node</button>
+  </div>
+</div>
+<div class="overlay" id="mOverlay"></div>
+<div class="sheet list-sheet" id="mListSheet">
+  <div class="handle"></div>
+  <div class="sheet-hdr">
+    <div class="sheet-ttl">倉庫清單 <span id="mCnt" style="color:var(--accent)"></span></div>
+    <button class="xbtn" id="mListClose">✕</button>
+  </div>
+  <div class="list-area-m" id="mListArea"></div>
+</div>
+<div class="sheet info-sheet" id="mInfoSheet">
+  <div class="info-hdr-m">
+    <div class="handle"></div>
+    <div class="info-title" id="mName"></div>
+    <div class="info-type" id="mType"></div>
+    <button class="xbtn" style="position:absolute;top:14px;right:16px" id="mInfoClose">✕</button>
+  </div>
+  <div class="info-body-wrap" id="mBody"></div>
+</div>
+
+<script>
+const SHEET_ID =  + SHEET_ID + ;
+const BASE = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=`;
+const MOBILE = window.innerWidth < 768 || /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+
+// State
+let WAREHOUSES = [], FLOORS = [], STORAGE = [], MHE = [], AUTO = [];
+let markers = [], activeType = 'all', q = '', selIdx = null;
+
+// CSV parser
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  const headers = parseCSVLine(lines[0]);
+  return lines.slice(1).map(line => {
+    const vals = parseCSVLine(line);
+    const obj = {};
+    headers.forEach((h, i) => obj[h.trim()] = (vals[i] || '').trim());
+    return obj;
+  }).filter(r => Object.values(r).some(v => v));
+}
+function parseCSVLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') { inQ = !inQ; continue; }
+    if (c === ',' && !inQ) { result.push(cur); cur = ''; continue; }
+    cur += c;
+  }
+  result.push(cur);
+  return result;
+}
+
+// Fetch all sheets
+async function loadData() {
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz0MOTN1MUBNcvI4tsujebTDPQer4PlFshSFKno_dCFNDy_HV0yrBPOzx9YJKw-Gig_/exec';
+  const TOKEN = 'Change@20260428';
+  const fetchSheet = (sheet) => fetch(SCRIPT_URL + '?token=' + TOKEN + '&sheet=' + sheet).then(r => r.json());
+  const [w, f, s, m, a] = await Promise.all([
+    fetchSheet('Warehouse'),
+    fetchSheet('Floor'),
+    fetchSheet('Storage Equipment'),
+    fetchSheet('MHE'),
+    fetchSheet('Automation'),
+  ]);
+  WAREHOUSES = w;
+  FLOORS = f;
+  STORAGE = s;
+  MHE = m;
+  AUTO = a;
+
+  // Parse lat/lng from Address
+  WAREHOUSES.forEach(w => {
+    const parts = (w['Address'] || '').split(',');
+    w._lat = parseFloat(parts[0]) || 0;
+    w._lng = parseFloat(parts[1]) || 0;
+    w._sqm = parseInt(w['sqm']) || 0;
+  });
+
+  document.getElementById('loadingBar').style.display = 'none';
+  render();
+}
+
+function isCold(w) { return w['Environment'] && (w['Environment'].includes('冷鍊') || w['Environment'].includes('-40') || w['Environment'].includes('冷藏')); }
+function getColor(w) {
+  if (w['Facility Type'] === 'End Customer') return '#ff6b35';
+  if (w['Facility Type'] === 'Logistics Node') return '#39ff14';
+  if (isCold(w)) return '#7b61ff';
+  return '#00d4ff';
+}
+function mkIcon(w) {
+  const c = getColor(w), r = MOBILE ? (w._sqm>50000?12:w._sqm>10000?9:6) : (w._sqm>50000?10:w._sqm>10000?7:5);
+  return L.divIcon({ className:'', html:`<div style="width:${r*2}px;height:${r*2}px;border-radius:50%;background:${c};border:1.5px solid rgba(255,255,255,.3);box-shadow:0 0 ${r*2}px ${c}55;"></div>`, iconSize:[r*2,r*2], iconAnchor:[r,r] });
+}
+
+function visible(w) {
+  const t = activeType==='all' || (activeType==='cold'&&isCold(w)&&w['Facility Type']==='Warehouse') || (activeType==='Warehouse'&&w['Facility Type']==='Warehouse'&&!isCold(w)) || w['Facility Type']===activeType;
+  const s = !q || w['Facility Name'].includes(q) || (w['房東']||'').includes(q) || (w['License']||'').includes(q);
+  return t && s && w._lat && w._lng;
+}
+
+function buildInfo(w) {
+  // Env tags
+  let env = '';
+  if (w['Environment']) env = w['Environment'].split(',').map(e=>e.trim()).filter(Boolean).map(e=>{
+    let c='eg'; if(e.includes('冷鍊')||e.includes('-40')||e.includes('冷藏'))c='ec'; else if(e.includes('空調'))c='ea'; else if(e.includes('藥品'))c='ep';
+    return `<span class="env-tag ${c}">${e}</span>`;
+  }).join('');
+
+  let area = '';
+  if (w._sqm) area += `${w._sqm.toLocaleString()} sqm`;
+  if (w['坪']) area += (area?' / ':'')+`${parseFloat(w['坪']).toLocaleString()} 坪`;
+
+  const r = (k,v) => (!v||v==='nan')?'' : `<div class="row"><span class="rk">${k}</span><span class="rv">${v}</span></div>`;
+
+  let body = `<div class="sec"><div class="sec-t">基本資訊</div>
+    ${r('WarehouseID', w['WarehouseID'])}
+    ${r('房東', w['房東'])}
+    ${r('啟用時間', w['啟用時間']?w['啟用時間'].substring(0,10):'')}
+    ${r('總面積', area)}
+    ${r('總樓層數', w['總樓層數']?w['總樓層數']+' 層':'')}
+    ${r('建築物用途', w['建築物使用用途'])}
+    ${r('License', w['License'])}
+  </div>`;
+
+  if (env) body += `<div class="sec"><div class="sec-t">環境</div><div style="margin-top:4px">${env}</div></div>`;
+  if (w['Comment']&&w['Comment']!=='nan') body += `<div class="sec"><div class="sec-t">備註</div><div class="note">${w['Comment']}</div></div>`;
+  if ((w['介紹文件']&&w['介紹文件']!=='nan')||(w['News']&&w['News']!=='nan')) {
+    body += `<div class="sec"><div class="sec-t">文件 & 新聞</div>
+      ${w['介紹文件']&&w['介紹文件']!=='nan'?r('介紹文件',`<a href="${w['介紹文件']}" target="_blank" class="lnk">開啟連結</a>`):''}
+      ${w['News']&&w['News']!=='nan'?r('News',`<a href="${w['News']}" target="_blank" class="lnk">開啟連結</a>`):''}
+    </div>`;
+  }
+
+  // Floors
+  const wid = w['WarehouseID'];
+  const floors = FLOORS.filter(f => f['WarehouseID'] === wid);
+  if (floors.length > 0) {
+    body += `<div class="sec"><div class="sec-t">樓層（${floors.length}）</div>`;
+    floors.forEach(f => {
+      const fid = f['UniqueID'];
+      const storage = STORAGE.filter(s => s['Floor UniqueID'] === fid);
+      const mhe = MHE.filter(m => m['Floor UniqueID'] === fid);
+      const auto = AUTO.filter(a => a['Floor UniqueID'] === fid);
+      const hasEquip = storage.length || mhe.length || auto.length;
+
+      body += `<div class="floor-item" onclick="this.classList.toggle('open')">
+        <div class="floor-header">
+          <span class="floor-name">${f['樓層']||'–'} 樓</span>
+          <span class="floor-badge">${f['用途']||''} ${f['可用面積']?f['可用面積']+' '+f['單位']:''}</span>
+        </div>
+        <div class="floor-detail">
+          ${f['承租人']?`<div class="floor-row"><span class="fk">承租人</span><span class="fv">${f['承租人']}</span></div>`:''}
+          ${f['服務對象']?`<div class="floor-row"><span class="fk">服務對象</span><span class="fv">${f['服務對象']}</span></div>`:''}
+          ${f['樓高']?`<div class="floor-row"><span class="fk">樓高</span><span class="fv">${f['樓高']} m</span></div>`:''}
+          ${f['樓地板載重']?`<div class="floor-row"><span class="fk">載重</span><span class="fv">${f['樓地板載重']} T/m²</span></div>`:''}
+          ${f['碼頭數']?`<div class="floor-row"><span class="fk">碼頭數</span><span class="fv">${f['碼頭數']}</span></div>`:''}
+          ${f['Operation']?`<div class="floor-row"><span class="fk">運營</span><span class="fv">${f['Operation']}</span></div>`:''}
+          ${storage.length?`<div class="equip-section"><div class="equip-title">Storage Equipment</div>${storage.map(s=>`<div class="equip-item">▸ ${s['貨架種類']||''} ${s['Capacity(板)']?s['Capacity(板)']+'板':''} ${s['Levels']?s['Levels']+'層':''}</div>`).join('')}</div>`:''}
+          ${mhe.length?`<div class="equip-section"><div class="equip-title">MHE</div>${mhe.map(m=>`<div class="equip-item">▸ ${m['MHE Type']||''} ${m['Vendor']?'('+m['Vendor']+')':''} ×${m['Quantity']||'–'}</div>`).join('')}</div>`:''}
+          ${auto.length?`<div class="equip-section"><div class="equip-title">Automation</div>${auto.map(a=>`<div class="equip-item">▸ ${a['自動化種類']||''} ${a['Vendor']?'('+a['Vendor']+')':''}</div>`).join('')}</div>`:''}
+        </div>
+      </div>`;
+    });
+    body += `</div>`;
+  }
+  return body;
+}
+
+function render() {
+  markers.forEach(m=>m.remove()); markers=[];
+  const dL=document.getElementById('dList'), mL=document.getElementById('mListArea');
+  if(dL) dL.innerHTML=''; if(mL) mL.innerHTML='';
+  let shown=0, sqm=0;
+
+  WAREHOUSES.forEach((w,i)=>{
+    if(!visible(w)) return;
+    shown++; sqm+=w._sqm;
+    const m=L.marker([w._lat,w._lng],{icon:mkIcon(w)}).addTo(map);
+    m.bindPopup(`<div class="pn">${w['Facility Name']}</div><div class="pm">${w['房東']||''}${w._sqm?' · '+w._sqm.toLocaleString()+' sqm':''}</div>`);
+    m.on('click',()=>{ sel(i); if(MOBILE) openMInfo(); });
+    markers.push(m);
+
+    function mkEl(){
+      const el=document.createElement('div');
+      el.className='warehouse-item'+(selIdx===i?' selected':'');
+      el.dataset.idx=i;
+      el.innerHTML=`<div class="item-name">${w['Facility Name']}</div><div class="item-meta">${w['房東']||''}${w._sqm?' · '+w._sqm.toLocaleString()+' sqm':''}</div>`;
+      el.addEventListener('click',()=>{ sel(i); map.panTo([w._lat,w._lng]); if(MOBILE){closeList();openMInfo();} });
+      return el;
+    }
+    if(dL) dL.appendChild(mkEl());
+    if(mL) mL.appendChild(mkEl());
+  });
+
+  document.getElementById('sShown').textContent=shown;
+  document.getElementById('sSqm').textContent=sqm>0?(sqm/1000).toFixed(0)+'k':'–';
+  if(document.getElementById('mCnt')) document.getElementById('mCnt').textContent=shown;
+  const cW=WAREHOUSES.filter(w=>w['Facility Type']==='Warehouse'&&!isCold(w)).length;
+  const cC=WAREHOUSES.filter(w=>isCold(w)&&w['Facility Type']==='Warehouse').length;
+  const cE=WAREHOUSES.filter(w=>w['Facility Type']==='End Customer').length;
+  const cN=WAREHOUSES.filter(w=>w['Facility Type']==='Logistics Node').length;
+  [['ca',shown],['cw',cW],['cc',cC],['ce',cE],['cn',cN]].forEach(([id,v])=>{ const el=document.getElementById(id); if(el) el.textContent=v; });
+}
+
+function sel(i) {
+  selIdx=i; const w=WAREHOUSES[i];
+  const title=w['Facility Name'], type=(w['Facility Type']||'')+(isCold(w)?' · 冷鏈':'');
+  const body=buildInfo(w);
+  const dn=document.getElementById('dName'); if(dn){ dn.textContent=title; document.getElementById('dType').textContent=type; document.getElementById('dBody').innerHTML=body; document.getElementById('dInfo').classList.add('visible'); }
+  const mn=document.getElementById('mName'); if(mn){ mn.textContent=title; document.getElementById('mType').textContent=type; document.getElementById('mBody').innerHTML=body; }
+  document.querySelectorAll('.warehouse-item').forEach(el=>el.classList.toggle('selected',parseInt(el.dataset.idx)===i));
+}
+
+// Map
+if(MOBILE) {
+  document.getElementById('dLayout').style.display='none';
+  document.getElementById('mBar').style.display='block';
+  const md=document.createElement('div');
+  md.id='mapM'; md.style.cssText='position:fixed;top:49px;left:0;right:0;bottom:0;z-index:1;';
+  document.body.appendChild(md);
+}
+const map=L.map(MOBILE?'mapM':'map',{zoomControl:false}).setView([24.5,121.0],8);
+L.control.zoom({position:MOBILE?'topright':'bottomright'}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'© CartoDB',maxZoom:19}).addTo(map);
+map.on('click',()=>{ if(!MOBILE&&selIdx!==null){document.getElementById('dInfo').classList.remove('visible');selIdx=null;} });
+
+// Desktop controls
+document.getElementById('dClose')?.addEventListener('click',()=>{document.getElementById('dInfo').classList.remove('visible');selIdx=null;});
+document.querySelectorAll('.filter-btn').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.filter-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); activeType=b.dataset.t; render(); }));
+document.getElementById('sdSearch')?.addEventListener('input',e=>{q=e.target.value.trim();render();});
+
+// Mobile controls
+function openList(){document.getElementById('mListSheet').classList.add('open');document.getElementById('mOverlay').classList.add('on');document.getElementById('mList').textContent='關閉';}
+function closeList(){document.getElementById('mListSheet').classList.remove('open');document.getElementById('mOverlay').classList.remove('on');document.getElementById('mList').textContent='清單';}
+function openMInfo(){document.getElementById('mInfoSheet').classList.add('open');}
+function closeMInfo(){document.getElementById('mInfoSheet').classList.remove('open');selIdx=null;}
+document.getElementById('mList')?.addEventListener('click',()=>document.getElementById('mListSheet').classList.contains('open')?closeList():openList());
+document.getElementById('mListClose')?.addEventListener('click',closeList);
+document.getElementById('mInfoClose')?.addEventListener('click',closeMInfo);
+document.getElementById('mOverlay')?.addEventListener('click',closeList);
+document.getElementById('mFilter')?.addEventListener('click',()=>{document.getElementById('mChips').classList.toggle('open');document.getElementById('mFilter').classList.toggle('active');});
+document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));c.classList.add('active');activeType=c.dataset.t;render();}));
+document.getElementById('mSearch')?.addEventListener('input',e=>{q=e.target.value.trim();render();});
+
+// Load data
+loadData();
+</script>
+</body>
+</html>
