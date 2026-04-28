@@ -433,7 +433,6 @@ document.getElementById('mSearch')?.addEventListener('input',e=>{q=e.target.valu
 
 // ===== Auth Check =====
 (function() {
-  const SESSION_HOURS = 8;
   const auth = JSON.parse(sessionStorage.getItem('tw_auth') || 'null');
   if (!auth || Date.now() > auth.expiry) {
     sessionStorage.removeItem('tw_auth');

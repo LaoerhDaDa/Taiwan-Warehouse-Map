@@ -122,9 +122,16 @@ button:disabled { opacity:.4; cursor:not-allowed; }
 </div>
 
 <script>
+// ===== 設定 =====
+// 把你的 Google Sheets CSV URL 填在這裡
+// Sheet 格式：A欄=username, B欄=password_hash(SHA-256)
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1S8JE_pXaXvaQLg9tLZ4h1RBiLFjWO_TSzVdeAgkjRIQ/gviz/tq?tqx=out:csv&sheet=Account';
-const SESSION_HOURS = 8;
 
+// Session 有效時間（小時）
+const SESSION_HOURS = 8;
+// ================
+
+// Enter 鍵觸發登入
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
 });
@@ -151,7 +158,8 @@ async function doLogin() {
     const res = await fetch(SHEET_URL);
     const text = await res.text();
 
-    const rows = text.trim().split('\n').slice(1);
+    // 解析 CSV
+    const rows = text.trim().split('\n').slice(1); // 跳過 header
     let found = false;
     for (const row of rows) {
       const cols = row.split(',').map(c => c.replace(/^"|"$/g, '').trim());
@@ -164,6 +172,7 @@ async function doLogin() {
     }
 
     if (found) {
+      // 存 session token（有效期內不用重登）
       const expiry = Date.now() + SESSION_HOURS * 3600 * 1000;
       sessionStorage.setItem('tw_auth', JSON.stringify({ user: username, expiry }));
       window.location.href = 'index.html';
@@ -174,7 +183,7 @@ async function doLogin() {
       document.getElementById('password').value = '';
     }
   } catch (e) {
-    err.textContent = '連線失敗，请刧不路复驕';
+    err.textContent = '連線失敗，請稍後再試';
     err.style.display = 'block';
     btn.disabled = false;
     btn.innerHTML = 'LOGIN';
