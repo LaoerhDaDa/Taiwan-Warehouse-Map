@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>TW Warehouse Map — Login</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;700&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family:'Noto Sans TC', sans-serif;
+  background:#0a0e14;
+  color:#c8d8e8;
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.card {
+  background:#111620;
+  border:1px solid #1e2a3a;
+  border-radius:6px;
+  padding:40px 36px;
+  width:100%;
+  max-width:380px;
+  margin:20px;
+}
+.logo {
+  font-family:'IBM Plex Mono', monospace;
+  font-size:11px;
+  font-weight:600;
+  color:#00d4ff;
+  letter-spacing:3px;
+  text-transform:uppercase;
+  margin-bottom:6px;
+}
+.subtitle {
+  font-size:12px;
+  color:#4a6070;
+  margin-bottom:32px;
+}
+label {
+  display:block;
+  font-family:'IBM Plex Mono', monospace;
+  font-size:10px;
+  color:#4a6070;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  margin-bottom:6px;
+}
+input {
+  width:100%;
+  background:#0a0e14;
+  border:1px solid #1e2a3a;
+  border-radius:3px;
+  padding:10px 14px;
+  color:#c8d8e8;
+  font-family:'IBM Plex Mono', monospace;
+  font-size:13px;
+  outline:none;
+  transition:border-color .2s;
+  margin-bottom:20px;
+}
+input:focus { border-color:#00d4ff; }
+button {
+  width:100%;
+  background:rgba(0,212,255,.1);
+  border:1px solid rgba(0,212,255,.3);
+  border-radius:3px;
+  padding:12px;
+  color:#00d4ff;
+  font-family:'IBM Plex Mono', monospace;
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:2px;
+  text-transform:uppercase;
+  cursor:pointer;
+  transition:all .2s;
+  margin-top:4px;
+}
+button:hover { background:rgba(0,212,255,.2); }
+button:disabled { opacity:.4; cursor:not-allowed; }
+.error {
+  display:none;
+  background:rgba(255,107,53,.08);
+  border:1px solid rgba(255,107,53,.3);
+  border-radius:3px;
+  padding:10px 14px;
+  font-size:12px;
+  color:#ff6b35;
+  margin-top:16px;
+  text-align:center;
+}
+.spinner {
+  display:inline-block;
+  width:12px; height:12px;
+  border:2px solid rgba(0,212,255,.3);
+  border-top-color:#00d4ff;
+  border-radius:50%;
+  animation:spin .6s linear infinite;
+  margin-right:8px;
+  vertical-align:middle;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo">TW Warehouse</div>
+  <div class="subtitle">Intelligence Map // Restricted Access</div>
+
+  <label>帳號</label>
+  <input type="text" id="username" placeholder="username" autocomplete="username">
+
+  <label>密碼</label>
+  <input type="password" id="password" placeholder="••••••••" autocomplete="current-password">
+
+  <button id="loginBtn" onclick="doLogin()">LOGIN</button>
+
+  <div class="error" id="errMsg">帳號或密碼錯誤</div>
+</div>
+
+<script>
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1S8JE_pXaXvaQLg9tLZ4h1RBiLFjWO_TSzVdeAgkjRIQ/gviz/tq?tqx=out:csv&sheet=Account';
+const SESSION_HOURS = 8;
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function doLogin() {
+  const btn = document.getElementById('loginBtn');
+  const err = document.getElementById('errMsg');
+  const username = document.getElementById('username').value.trim().toLowerCase();
+  const password = document.getElementById('password').value;
+
+  if (!username || !password) return;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>驗證中...';
+  err.style.display = 'none';
+
+  try {
+    const hash = await sha256(password);
+    const res = await fetch(SHEET_URL);
+    const text = await res.text();
+
+    const rows = text.trim().split('\n').slice(1);
+    let found = false;
+    for (const row of rows) {
+      const cols = row.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+      const sheetUser = cols[0]?.toLowerCase();
+      const sheetHash = cols[1]?.toLowerCase();
+      if (sheetUser === username && sheetHash === hash) {
+        found = true;
+        break;
+      }
+    }
+
+    if (found) {
+      const expiry = Date.now() + SESSION_HOURS * 3600 * 1000;
+      sessionStorage.setItem('tw_auth', JSON.stringify({ user: username, expiry }));
+      window.location.href = 'index.html';
+    } else {
+      err.style.display = 'block';
+      btn.disabled = false;
+      btn.innerHTML = 'LOGIN';
+      document.getElementById('password').value = '';
+    }
+  } catch (e) {
+    err.textContent = '連線失敗，请刧不路复驕';
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.innerHTML = 'LOGIN';
+  }
+}
+</script>
+</body>
+</html>

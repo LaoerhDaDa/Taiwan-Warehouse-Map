@@ -243,9 +243,7 @@ function parseCSVLine(line) {
 
 // Fetch all sheets
 async function loadData() {
-  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz0MOTN1MUBNcvI4tsujebTDPQer4PlFshSFKno_dCFNDy_HV0yrBPOzx9YJKw-Gig_/exec';
-  const TOKEN = 'Change@20260428';
-  const fetchSheet = (sheet) => fetch(SCRIPT_URL + '?token=' + TOKEN + '&sheet=' + sheet).then(r => r.json());
+  const fetchSheet = (sheet) => fetch(BASE + encodeURIComponent(sheet)).then(r => r.text()).then(parseCSV);
   const [w, f, s, m, a] = await Promise.all([
     fetchSheet('Warehouse'),
     fetchSheet('Floor'),
@@ -264,7 +262,7 @@ async function loadData() {
     const parts = (w['Address'] || '').split(',');
     w._lat = parseFloat(parts[0]) || 0;
     w._lng = parseFloat(parts[1]) || 0;
-    w._sqm = parseInt(w['sqm']) || 0;
+    w._sqm = parseInt(w['active[sqm]']) || 0;
   });
 
   document.getElementById('loadingBar').style.display = 'none';
@@ -285,12 +283,11 @@ function mkIcon(w) {
 
 function visible(w) {
   const t = activeType==='all' || (activeType==='cold'&&isCold(w)&&w['Facility Type']==='Warehouse') || (activeType==='Warehouse'&&w['Facility Type']==='Warehouse'&&!isCold(w)) || w['Facility Type']===activeType;
-  const s = !q || w['Facility Name'].includes(q) || (w['房東']||'').includes(q) || (w['License']||'').includes(q);
+  const s = !q || w['Facility Name'].includes(q) || (w['倉庱']||'').includes(q) || (w['License']||'').includes(q);
   return t && s && w._lat && w._lng;
 }
 
 function buildInfo(w) {
-  // Env tags
   let env = '';
   if (w['Environment']) env = w['Environment'].split(',').map(e=>e.trim()).filter(Boolean).map(e=>{
     let c='eg'; if(e.includes('冷鍊')||e.includes('-40')||e.includes('冷藏'))c='ec'; else if(e.includes('空調'))c='ea'; else if(e.includes('藥品'))c='ep';
@@ -306,7 +303,7 @@ function buildInfo(w) {
   let body = `<div class="sec"><div class="sec-t">基本資訊</div>
     ${r('WarehouseID', w['WarehouseID'])}
     ${r('房東', w['房東'])}
-    ${r('啟用時間', w['啟用時間']?w['啟用時間'].substring(0,10):'')}
+    ${r('啟璨時間', w['啟璨時間']?w['啟璨時間'].substring(0,10):'')}
     ${r('總面積', area)}
     ${r('總樓層數', w['總樓層數']?w['總樓層數']+' 層':'')}
     ${r('建築物用途', w['建築物使用用途'])}
@@ -322,7 +319,6 @@ function buildInfo(w) {
     </div>`;
   }
 
-  // Floors
   const wid = w['WarehouseID'];
   const floors = FLOORS.filter(f => f['WarehouseID'] === wid);
   if (floors.length > 0) {
@@ -332,12 +328,11 @@ function buildInfo(w) {
       const storage = STORAGE.filter(s => s['Floor UniqueID'] === fid);
       const mhe = MHE.filter(m => m['Floor UniqueID'] === fid);
       const auto = AUTO.filter(a => a['Floor UniqueID'] === fid);
-      const hasEquip = storage.length || mhe.length || auto.length;
 
       body += `<div class="floor-item" onclick="this.classList.toggle('open')">
         <div class="floor-header">
-          <span class="floor-name">${f['樓層']||'–'} 樓</span>
-          <span class="floor-badge">${f['用途']||''} ${f['可用面積']?f['可用面積']+' '+f['單位']:''}</span>
+          <span class="floor-name">${f['樓層']||'�}） 樋</span>
+          <span class="floor-badge">${f['用途']||''} ${f['可璨面積']?f['可璨面積']+' '+f['單位']:''}</span>
         </div>
         <div class="floor-detail">
           ${f['承租人']?`<div class="floor-row"><span class="fk">承租人</span><span class="fv">${f['承租人']}</span></div>`:''}
@@ -375,7 +370,7 @@ function render() {
       const el=document.createElement('div');
       el.className='warehouse-item'+(selIdx===i?' selected':'');
       el.dataset.idx=i;
-      el.innerHTML=`<div class="item-name">${w['Facility Name']}</div><div class="item-meta">${w['房東']||''}${w._sqm?' · '+w._sqm.toLocaleString()+' sqm':''}</div>`;
+      el.innerHTML<`<div class="item-name">${w['Facility Name']}</div><div class="item-meta">${w['房東']||''}${w._sqm?' · '+w._sqm.toLocaleString()+' sqm':''}</div>`;
       el.addEventListener('click',()=>{ sel(i); map.panTo([w._lat,w._lng]); if(MOBILE){closeList();openMInfo();} });
       return el;
     }
@@ -415,13 +410,11 @@ L.control.zoom({position:MOBILE?'topright':'bottomright'}).addTo(map);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'© CartoDB',maxZoom:19}).addTo(map);
 map.on('click',()=>{ if(!MOBILE&&selIdx!==null){document.getElementById('dInfo').classList.remove('visible');selIdx=null;} });
 
-// Desktop controls
 document.getElementById('dClose')?.addEventListener('click',()=>{document.getElementById('dInfo').classList.remove('visible');selIdx=null;});
-document.querySelectorAll('.filter-btn').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.filter-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); activeType=b.dataset.t; render(); }));
+document.querySelectorAll('.filter-btn').forEach(b=>b.addEventListener('click',()=>{ document.querySelectorAll('.filter-btn').forEach(x:>x.classList.remove('active')); b.classList.add('active'); activeType=b.dataset.t; render(); }));
 document.getElementById('sdSearch')?.addEventListener('input',e=>{q=e.target.value.trim();render();});
 
-// Mobile controls
-function openList(){document.getElementById('mListSheet').classList.add('open');document.getElementById('mOverlay').classList.add('on');document.getElementById('mList').textContent='關閉';}
+function openList(){document.getElementById('mListSheet').classList.add('open');document.getElementById('mOverlay').classList.add('on');document.getElementById('mList').textContent='闛)��';}
 function closeList(){document.getElementById('mListSheet').classList.remove('open');document.getElementById('mOverlay').classList.remove('on');document.getElementById('mList').textContent='清單';}
 function openMInfo(){document.getElementById('mInfoSheet').classList.add('open');}
 function closeMInfo(){document.getElementById('mInfoSheet').classList.remove('open');selIdx=null;}
@@ -432,6 +425,17 @@ document.getElementById('mOverlay')?.addEventListener('click',closeList);
 document.getElementById('mFilter')?.addEventListener('click',()=>{document.getElementById('mChips').classList.toggle('open');document.getElementById('mFilter').classList.toggle('active');});
 document.querySelectorAll('.chip').forEach(c=>c.addEventListener('click',()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));c.classList.add('active');activeType=c.dataset.t;render();}));
 document.getElementById('mSearch')?.addEventListener('input',e=>{q=e.target.value.trim();render();});
+
+// ===== Auth Check =====
+(function() {
+  const SESSION_HOURS = 8;
+  const auth = JSON.parse(sessionStorage.getItem('tw_auth') || 'null');
+  if (!auth || Date.now() > auth.expiry) {
+    sessionStorage.removeItem('tw_auth');
+    window.location.replace('login.html');
+  }
+})();
+// ======================
 
 // Load data
 loadData();
